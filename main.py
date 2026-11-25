@@ -43,6 +43,15 @@ def main() -> int:
     if "\n" in text or "\r" in text:
         print("entry must be a single paragraph", file=sys.stderr)
         return 1
+    # Invisible padding would be counted by the gate but never seen by the
+    # judge: reject non-breaking spaces, byte-order marks, zero-width
+    # characters and line/paragraph separators outright.
+    invisible = [c for c in text if ord(c) < 0x20 or ord(c) == 0x7F
+                 or c in "\u00a0\ufeff\u200b\u200c\u200d\u2028\u2029"]
+    if invisible:
+        print(f"entry contains {len(invisible)} invisible/control character(s)",
+              file=sys.stderr)
+        return 1
 
     out_dir = os.path.dirname(OUTPUT_PATH) or "."
     try:
@@ -60,6 +69,12 @@ def main() -> int:
         f.write(text)
     # The grader collects outputs as another user: leave the file readable.
     os.chmod(output_path, 0o644)
+    # Prove the mode stuck: a umask or filesystem quirk that silently
+    # dropped the read bit would fail the run as "<path> is not readable".
+    import stat as _stat
+    if _stat.S_IMODE(os.stat(output_path).st_mode) & 0o444 != 0o444:
+        print("entry file is not world-readable after chmod", file=sys.stderr)
+        return 1
     # Self-check: read back exactly what was written and re-validate it.
     with open(output_path, "r", encoding="utf-8", newline="") as f:
         written = f.read()
